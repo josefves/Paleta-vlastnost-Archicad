@@ -1,0 +1,33 @@
+name: Sestaveni doplnku
+
+on:
+  push:
+  workflow_dispatch:
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    runs-on: windows-2022
+
+    steps:
+      - name: Stazeni zdrojovych kodu
+        uses: actions/checkout@v4
+
+      - name: Instalace Pythonu
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Sestaveni pro Archicad 29
+        run: |
+          python Tools/BuildAddOn.py --configFile config.json --acVersion 29 --buildConfig RelWithDebInfo
+
+      - name: Ulozeni hotoveho doplnku
+        uses: actions/upload-artifact@v4
+        with:
+          name: PaletaVlastnosti-AC29-Windows
+          path: Build/**/PaletaVlastnosti.apx
+          if-no-files-found: error
