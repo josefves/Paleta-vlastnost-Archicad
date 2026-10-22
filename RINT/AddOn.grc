@@ -1,0 +1,64 @@
+﻿#include "ResourceIds.hpp"
+
+'STR#' ID_ADDON_INFO "Add-on Name and Description" {
+/* [  1] */		"Paleta vlastností"
+/* [  2] */		"Paleta zobrazující a upravující vlastnosti vybraných prvků."
+}
+
+'STR#' ID_PALETTE_MENU "Strings for the Menu" {
+/* [  1] */		"Vlastnosti prvku^ES^EE^EI^ED^EW^E3^EL"
+}
+
+'STR#' ID_UI_STRINGS "UI strings" {
+/* [  1] */		"Vlastnost"
+/* [  2] */		"Hodnota"
+/* [  3] */		"Nic není vybráno"
+/* [  4] */		"Vybráno prvků: "
+/* [  5] */		"‹různé›"
+/* [  6] */		"Ano"
+/* [  7] */		"Ne"
+/* [  8] */		"Jen pro čtení"
+/* [  9] */		"Hodnota nastavena u prvků: "
+/* [ 10] */		"Nelze upravit u prvků (nerezervováno / jen pro čtení): "
+/* [ 11] */		"Neplatná hodnota."
+/* [ 12] */		"Úprava vlastnosti"
+/* [ 13] */		"Výchozí hodnota obnovena u prvků: "
+/* [ 14] */		"Seznam hodnot – upravte v Nastavení prvku"
+/* [ 15] */		" (vlastnosti z prvních 200)"
+/* [ 16] */		"Vyberte vlastnost v seznamu."
+/* [ 17] */		"+  "
+/* [ 18] */		"–  "
+/* [ 19] */		"  ·  "
+/* [ 20] */		"Text je příliš dlouhý pro úpravu v paletě."
+/* [ 21] */		"‹nezadáno›"
+}
+
+/* --- Palette ---------------------------------------------------------------*/
+
+'GDLG'  ID_PALETTE_DLG    Palette | topCaption | close | grow   0   0  320  470  "Vlastnosti prvku"  {
+/* [  1] */ LeftText			    8    6  304   18	SmallPlain  vCenter  ""
+/* [  2] */ LeftText			    8   30   46   18	SmallPlain  vCenter  "Hledat:"
+/* [  3] */ TextEdit			   56   28  172   22	LargePlain  255
+/* [  4] */ CheckBox			  236   30   80   18	SmallPlain  "Vestavěné"
+/* [  5] */ SingleSelList		    8   56  304  300	SmallPlain  PartialItems  18  HasHeader  18
+/* [  6] */ LeftText			    8  362  304   18	LargeBold   vCenter  ""
+/* [  7] */ TextEdit			    8  384  214   22	LargePlain  1024
+/* [  8] */ PopupControl		    8  384  214   22	200  0
+/* [  9] */ Button				  228  383   84   24	LargePlain  "Použít"
+/* [ 10] */ Button				  228  411   84   24	LargePlain  "Výchozí"
+/* [ 11] */ LeftText			    8  412  214   36	SmallPlain  vCenter  ""
+}
+
+'DLGH'  ID_PALETTE_DLG  DLG_PaletaVlastnosti {
+1	""		LeftText_0
+2	""		LeftText_1
+3	""		TextEdit_0
+4	""		CheckBox_0
+5	""		SingleSelListBox_0
+6	""		LeftText_2
+7	""		TextEdit_1
+8	""		PopupControl_0
+9	""		Button_0
+10	""		Button_1
+11	""		LeftText_3
+}

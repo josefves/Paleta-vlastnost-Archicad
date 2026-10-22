@@ -1,0 +1,13 @@
+{
+    "addOnName": "PaletaVlastnosti",
+    "defaultLanguage": "INT",
+    "languages": [
+        "INT"
+    ],
+    "version": "1.0.0",
+    "copyright": {
+        "name": "Josef Vesely",
+        "year": "%Y"
+    },
+    "description": "Paleta zobrazujici a upravujici vlastnosti vybranych prvku"
+}
