@@ -18,7 +18,8 @@ class PropertyPalette final : public DG::Palette,
 							  public DG::ListBoxObserver,
 							  public DG::ButtonItemObserver,
 							  public DG::TextEditBaseObserver,
-							  public DG::CheckItemObserver
+							  public DG::CheckItemObserver,
+							  public DG::PopUpObserver
 {
 public:
 	static constexpr short MenuResId		= ID_PALETTE_MENU;
@@ -88,6 +89,8 @@ private:
 	bool							dataIsDirty				= true;
 	bool							isApplying				= false;
 	bool							pendingDataRefresh		= false;
+	bool							isUpdatingEditor		= false;
+	bool							pendingPopupApply		= false;
 
 	static GS::Ref<PropertyPalette>	instance;
 
@@ -97,6 +100,8 @@ private:
 	void	RefreshData ();
 	void	RebuildList ();
 	void	UpdateEditor ();
+	void	UpdateEditorContent ();
+	void	OpenValueEditorAtCursor ();
 	void	UpdateColumns ();
 	void	UpdateInfoText ();
 	void	UpdateObservers ();
@@ -125,6 +130,9 @@ private:
 
 	// DG::TextEditBaseObserver
 	virtual void	TextEditChanged (const DG::TextEditChangeEvent& ev) override;
+
+	// DG::PopUpObserver
+	virtual void	PopUpChanged (const DG::PopUpChangeEvent& ev) override;
 
 	// DG::CheckItemObserver
 	virtual void	CheckItemChanged (const DG::CheckItemChangeEvent& ev) override;

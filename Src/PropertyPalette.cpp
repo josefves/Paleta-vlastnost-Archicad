@@ -5,6 +5,9 @@
 #include "PropertyPalette.hpp"
 
 #include "Color.hpp"
+#include "DGMenu.hpp"
+#include "DGMenuItem.hpp"
+#include "DGCommandDescriptor.hpp"
 
 #include <algorithm>
 
@@ -15,6 +18,10 @@ namespace {
 const GS::Guid	PaletteGuid ("{88094033-EFF5-4B26-A9FB-C87E6A24AD3D}");
 
 const Gfx::Color ReadOnlyColor (128, 128, 128);
+
+// Identifikatory prikazu nabidky voleb (shodne s MDID doplnku v RFIX/AddOnFix.grc)
+constexpr ULong MenuCommandDeveloperId	= 1128352311;
+constexpr ULong MenuCommandLocalId		= 2528595118;
 
 enum UIStringIds {
 	Str_HeaderName			= 1,
@@ -98,6 +105,7 @@ PropertyPalette::PropertyPalette () :
 	defaultButton.Attach (static_cast<DG::ButtonItemObserver&> (*this));
 	filterEdit.Attach (static_cast<DG::TextEditBaseObserver&> (*this));
 	builtInCheck.Attach (static_cast<DG::CheckItemObserver&> (*this));
+	valuePopup.Attach (static_cast<DG::PopUpObserver&> (*this));
 
 	returnHotKey	= RegisterHotKey (DG::Key::Return);
 	enterHotKey		= RegisterHotKey (DG::Key::Enter);
@@ -134,6 +142,7 @@ PropertyPalette::~PropertyPalette ()
 	defaultButton.Detach (static_cast<DG::ButtonItemObserver&> (*this));
 	filterEdit.Detach (static_cast<DG::TextEditBaseObserver&> (*this));
 	builtInCheck.Detach (static_cast<DG::CheckItemObserver&> (*this));
+	valuePopup.Detach (static_cast<DG::PopUpObserver&> (*this));
 
 	DG::PanelObserver& panelObserver = *this;
 	Detach (panelObserver);
@@ -429,6 +438,14 @@ void PropertyPalette::SetStatus (const GS::UniString& text)
 
 void PropertyPalette::UpdateEditor ()
 {
+	isUpdatingEditor = true;
+	UpdateEditorContent ();
+	isUpdatingEditor = false;
+}
+
+
+void PropertyPalette::UpdateEditorContent ()
+{
 	const PropData::PropRow* row = GetSelectedRow ();
 
 	valuePopup.Hide ();
@@ -457,6 +474,32 @@ void PropertyPalette::UpdateEditor ()
 			valueEdit.Enable ();
 			applyButton.Enable ();
 			break;
+
+		case PropData::EditKind::Renovation:
+		{
+			valueEdit.Hide ();
+			valuePopup.DeleteItem (DG::PopUp::AllItems);
+
+			short itemToSelect = 0;
+			if (row->renovationStatus == API_UndefinedStatus) {
+				AppendPopupItem (valuePopup, GetUIString (Str_Mixed), PopupValue_Mixed);
+				itemToSelect = valuePopup.GetItemCount ();
+			}
+
+			const API_RenovationStatusType statuses[] = { API_ExistingStatus, API_DemolishedStatus, API_NewStatus };
+			for (API_RenovationStatusType status : statuses) {
+				AppendPopupItem (valuePopup, PropData::GetRenovationName (status), static_cast<DGUserData> (status));
+				if (status == row->renovationStatus)
+					itemToSelect = valuePopup.GetItemCount ();
+			}
+
+			if (itemToSelect > 0)
+				valuePopup.SelectItem (itemToSelect);
+			valuePopup.Show ();
+			valuePopup.Enable ();
+			applyButton.Enable ();
+			break;
+		}
 
 		case PropData::EditKind::Bool:
 		case PropData::EditKind::Enum:
@@ -552,6 +595,7 @@ void PropertyPalette::Apply ()
 			break;
 		case PropData::EditKind::Bool:
 		case PropData::EditKind::Enum:
+		case PropData::EditKind::Renovation:
 			popupValue = valuePopup.GetItemValue (valuePopup.GetSelectedItem ());
 			if (popupValue == PopupValue_Mixed)
 				doApply = false;
@@ -570,6 +614,9 @@ void PropertyPalette::Apply ()
 			case PropData::EditKind::Text:
 			case PropData::EditKind::Number:
 				result = PropData::ApplyText (elems, definition, text);
+				break;
+			case PropData::EditKind::Renovation:
+				result = PropData::ApplyRenovation (elems, static_cast<API_RenovationStatusType> (popupValue));
 				break;
 			case PropData::EditKind::Bool:
 				result = PropData::ApplyBool (elems, definition.guid, popupValue == PopupValue_True);
@@ -655,6 +702,10 @@ void PropertyPalette::PanelResized (const DG::PanelResizeEvent& ev)
 
 void PropertyPalette::PanelIdle (const DG::PanelIdleEvent&)
 {
+	if (pendingPopupApply) {
+		pendingPopupApply = false;
+		Apply ();
+	}
 	if (pendingDataRefresh && !isApplying)
 		RefreshData ();
 }
@@ -689,6 +740,7 @@ void PropertyPalette::ListBoxSelectionChanged (const DG::ListBoxSelectionEvent& 
 	if (ev.GetSource () != &propList)
 		return;
 
+	pendingPopupApply = false;
 	const PropData::PropRow* row = GetSelectedRow ();
 	selectedDefinitionGuid = (row != nullptr) ? row->definition.guid : APINULLGuid;
 	UpdateEditor ();
@@ -701,7 +753,26 @@ void PropertyPalette::ListBoxClicked (const DG::ListBoxClickEvent& ev)
 		return;
 
 	const ListEntry* entry = GetEntry (ev.GetListItem ());
-	if (entry == nullptr || entry->propIndex >= 0 || !filterEdit.GetText ().IsEmpty ())
+	if (entry == nullptr)
+		return;
+
+	// Klik do sloupce Hodnota u vlastnosti
+	if (entry->propIndex >= 0) {
+		if (ev.GetTabFieldIndex () == ValueColumn) {
+			// klik muze prijit driv nez zmena vyberu - radek vybereme sami
+			if (propList.GetSelectedItem () != ev.GetListItem ()) {
+				propList.SelectItem (ev.GetListItem ());
+				const PropData::PropRow* clickedRow = GetSelectedRow ();
+				selectedDefinitionGuid = (clickedRow != nullptr) ? clickedRow->definition.guid : APINULLGuid;
+				pendingPopupApply = false;
+				UpdateEditor ();
+			}
+			OpenValueEditorAtCursor ();
+		}
+		return;
+	}
+
+	if (!filterEdit.GetText ().IsEmpty ())
 		return;
 
 	const GS::Guid groupGuid = APIGuid2GSGuid (groups[entry->groupIndex].guid);
@@ -711,6 +782,71 @@ void PropertyPalette::ListBoxClicked (const DG::ListBoxClickEvent& ev)
 		collapsedGroups.Add (groupGuid);
 
 	RebuildList ();
+}
+
+
+void PropertyPalette::OpenValueEditorAtCursor ()
+{
+	const PropData::PropRow* row = GetSelectedRow ();
+	if (row == nullptr)
+		return;
+
+	switch (PropData::GetEditKind (*row)) {
+		case PropData::EditKind::Text:
+		case PropData::EditKind::Number:
+			valueEdit.SetFocus ();
+			valueEdit.SelectAll ();
+			return;
+
+		case PropData::EditKind::Bool:
+		case PropData::EditKind::Enum:
+		case PropData::EditKind::Renovation:
+			break;
+
+		default:
+			return;
+	}
+
+	// Nabidka voleb u kurzoru - polozky se berou z rozbalovaciho seznamu dole
+	const short itemCount		= valuePopup.GetItemCount ();
+	const short selectedItem	= valuePopup.GetSelectedItem ();
+
+	DG::Menu			menu ("-");
+	DG::CommandTable	commands;
+	for (short item = 1; item <= itemCount; ++item) {
+		if (valuePopup.GetItemValue (item) == PopupValue_Mixed)
+			continue;
+
+		const DG::Command command (static_cast<ULong> (item), MenuCommandDeveloperId, MenuCommandLocalId);
+		DG::CommandDescriptor* descriptor = new DG::CommandDescriptor (command, valuePopup.GetItemText (item));
+		if (item == selectedItem)
+			descriptor->Check ();
+		commands.Add (command, descriptor);
+		menu.AddMenuItem (DG::MenuSimpleItem (command));
+	}
+
+	short chosenItem = 0;
+	if (!commands.IsEmpty ()) {
+		DG::MousePosData mousePos;
+		mousePos.Retrieve ();
+
+		DG::ContextMenu contextMenu ("-", &menu);
+		contextMenu.SetEnabledCommands (commands);
+
+		DG::CommandEvent* commandEvent = contextMenu.Display (mousePos.GetMouseOffsetInNativeUnits ());
+		if (commandEvent != nullptr) {
+			chosenItem = static_cast<short> (commandEvent->GetCommand ().GetCommandId ());
+			delete commandEvent;
+		}
+	}
+
+	for (auto it = commands.EnumerateValues (); it != nullptr; ++it)
+		delete *it;
+
+	if (chosenItem > 0 && chosenItem <= itemCount && chosenItem != selectedItem) {
+		valuePopup.SelectItem (chosenItem);
+		pendingPopupApply = true;	// zapise se v PanelIdle
+	}
 }
 
 
@@ -739,6 +875,18 @@ void PropertyPalette::TextEditChanged (const DG::TextEditChangeEvent& ev)
 {
 	if (ev.GetSource () == &filterEdit)
 		RebuildList ();
+}
+
+
+void PropertyPalette::PopUpChanged (const DG::PopUpChangeEvent& ev)
+{
+	// Vyber z nabidky se zapise hned, bez tlacitka Pouzit
+	if (ev.GetSource () != &valuePopup || isUpdatingEditor)
+		return;
+	if (valuePopup.GetItemValue (valuePopup.GetSelectedItem ()) == PopupValue_Mixed)
+		return;
+	// zapis az mimo udalost nabidky (v PanelIdle), protoze zapis nabidku znovu sestavi
+	pendingPopupApply = true;
 }
 
 

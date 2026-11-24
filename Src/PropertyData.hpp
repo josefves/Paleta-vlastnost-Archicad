@@ -24,6 +24,10 @@ struct PropRow {
 	bool					editable	= false;	// lze upravit u vsech nactenych prvku
 	bool					hasValue	= false;	// prvni prvek ma vyhodnocenou hodnotu
 	API_PropertyValue		firstValue;				// hodnota u prvniho prvku
+
+	// Vestavena vlastnost "Stav pri rekonstrukci" - meni se primo v hlavicce prvku
+	bool						isRenovation		= false;
+	API_RenovationStatusType	renovationStatus	= API_UndefinedStatus;	// spolecny stav (Undefined = ruzne)
 };
 
 struct GroupRow {
@@ -40,7 +44,8 @@ enum class EditKind {
 	Text,
 	Number,
 	Bool,
-	Enum
+	Enum,
+	Renovation
 };
 
 struct ApplyResult {
@@ -59,9 +64,11 @@ bool				VariantEquals (const API_Variant& a, const API_Variant& b);
 ApplyResult			ApplyText		(const GS::Array<API_Guid>& elems, const API_PropertyDefinition& definition, const GS::UniString& text);
 ApplyResult			ApplyBool		(const GS::Array<API_Guid>& elems, const API_Guid& definitionGuid, bool value);
 ApplyResult			ApplyEnumKey	(const GS::Array<API_Guid>& elems, const API_Guid& definitionGuid, const API_Variant& keyVariant);
+ApplyResult			ApplyRenovation	(const GS::Array<API_Guid>& elems, API_RenovationStatusType status);
 ApplyResult			ResetToDefault	(const GS::Array<API_Guid>& elems, const API_Guid& definitionGuid);
 
 GS::UniString		GetUIString (Int32 index);
+GS::UniString		GetRenovationName (API_RenovationStatusType status);
 
 }
 
