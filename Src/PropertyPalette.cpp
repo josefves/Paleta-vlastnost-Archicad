@@ -55,6 +55,14 @@ void AppendPopupItem (DG::PopUp& popup, const GS::UniString& text, DGUserData va
 	popup.SetItemValue (item, value);
 }
 
+// funguje v API 29 i 30 (ToLowerCase v API 30 neexistuje)
+GS::UniString ToLower (const GS::UniString& text)
+{
+	GS::UniString result = text;
+	result.SetToLowerCase ();
+	return result;
+}
+
 GS::UniString NumberToString (UInt32 value)
 {
 	return GS::UniString::Printf ("%u", static_cast<unsigned int> (value));
@@ -312,7 +320,7 @@ void PropertyPalette::RebuildList ()
 	constexpr short MaxListItems = 32000;
 
 	const short scrollPosition = propList.GetScrollPosition ();
-	const GS::UniString filter = filterEdit.GetText ().ToLowerCase ();
+	const GS::UniString filter = ToLower (filterEdit.GetText ());
 	const bool filterActive = !filter.IsEmpty ();
 	const GS::UniString indent = "      ";
 
@@ -324,14 +332,14 @@ void PropertyPalette::RebuildList ()
 
 	for (UInt32 groupIndex = 0; groupIndex < groups.GetSize (); ++groupIndex) {
 		const PropData::GroupRow& group = groups[groupIndex];
-		const bool groupMatches = filterActive && group.name.ToLowerCase ().Contains (filter);
+		const bool groupMatches = filterActive && ToLower (group.name).Contains (filter);
 
 		GS::Array<UInt32> visibleProps;
 		for (UInt32 propIndex = 0; propIndex < group.props.GetSize (); ++propIndex) {
 			const PropData::PropRow& row = group.props[propIndex];
 			if (!filterActive || groupMatches ||
-				row.definition.name.ToLowerCase ().Contains (filter) ||
-				row.valueText.ToLowerCase ().Contains (filter))
+				ToLower (row.definition.name).Contains (filter) ||
+				ToLower (row.valueText).Contains (filter))
 			{
 				visibleProps.Push (propIndex);
 			}
