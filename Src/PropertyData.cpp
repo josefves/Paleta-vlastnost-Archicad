@@ -298,6 +298,19 @@ GS::Array<GroupRow> Collect (const GS::Array<API_Guid>& elems, bool includeBuilt
 	}
 	const API_PropertyDefinitionFilter filter = includeBuiltIn ? API_PropertyDefinitionFilter_All : API_PropertyDefinitionFilter_UserDefined;
 
+	// Skupiny vlastnosti - skryte skupiny se vyradi uz tady, aby se jejich hodnoty vubec nepocitaly
+	GS::Array<API_PropertyGroup> allGroups;
+	ACAPI_Property_GetPropertyGroups (allGroups);
+
+	GS::HashSet<GS::Guid> hiddenGroupGuids;
+	for (const API_PropertyGroup& group : allGroups) {
+		if (IsHiddenGroup (group.name))
+			hiddenGroupGuids.Add (APIGuid2GSGuid (group.guid));
+	}
+	auto isShownDefinition = [&] (const API_Guid& elemGuid, const API_PropertyDefinition& definition) {
+		return !hiddenGroupGuids.Contains (APIGuid2GSGuid (definition.groupGuid)) && IsVisibleForElement (elemGuid, definition);
+	};
+
 	// 1) Definice vlastnosti spolecne vsem nactenym prvkum
 	GS::Array<API_PropertyDefinition> definitions;
 	{
@@ -307,7 +320,7 @@ GS::Array<GroupRow> Collect (const GS::Array<API_Guid>& elems, bool includeBuilt
 
 		GS::HashSet<GS::Guid> commonGuids;
 		for (const API_PropertyDefinition& definition : firstDefinitions) {
-			if (IsVisibleForElement (elems[0], definition))
+			if (isShownDefinition (elems[0], definition))
 				commonGuids.Add (APIGuid2GSGuid (definition.guid));
 		}
 
@@ -319,7 +332,7 @@ GS::Array<GroupRow> Collect (const GS::Array<API_Guid>& elems, bool includeBuilt
 			}
 			GS::HashSet<GS::Guid> otherGuids;
 			for (const API_PropertyDefinition& definition : otherDefinitions) {
-				if (IsVisibleForElement (elems[i], definition))
+				if (isShownDefinition (elems[i], definition))
 					otherGuids.Add (APIGuid2GSGuid (definition.guid));
 			}
 			GS::HashSet<GS::Guid> intersection;
@@ -338,6 +351,18 @@ GS::Array<GroupRow> Collect (const GS::Array<API_Guid>& elems, bool includeBuilt
 
 	if (definitions.IsEmpty ())
 		return groups;
+
+	// Vlastnosti jen pro cteni paleta nezobrazuje - jejich hodnoty (casto pocitane, napr. plochy
+	// a objemy) se proto nenacitaji. Kdyz nejde upravit nic, nactou se vsechny.
+	{
+		GS::Array<API_PropertyDefinition> editableDefinitions;
+		for (const API_PropertyDefinition& definition : definitions) {
+			if (ACAPI_Element_IsPropertyDefinitionValueEditable (elems[0], definition.guid))
+				editableDefinitions.Push (definition);
+		}
+		if (!editableDefinitions.IsEmpty ())
+			definitions = editableDefinitions;
+	}
 
 	// 2) Hodnoty
 	GS::Array<PropRow> rows;
@@ -389,9 +414,6 @@ GS::Array<GroupRow> Collect (const GS::Array<API_Guid>& elems, bool includeBuilt
 
 
 	// 3) Seskupeni podle skupin ve Spravci vlastnosti (vlastni skupiny prvni, pak vestavene)
-	GS::Array<API_PropertyGroup> allGroups;
-	ACAPI_Property_GetPropertyGroups (allGroups);
-
 	GS::HashTable<GS::Guid, UInt32> groupIndexByGuid;
 	auto addGroup = [&] (const API_PropertyGroup& group) {
 		const GS::Guid key = APIGuid2GSGuid (group.guid);
