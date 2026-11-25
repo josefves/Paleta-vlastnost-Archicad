@@ -31,12 +31,15 @@ struct PropRow {
 	API_ElemCategory				category		{};
 	GS::Array<API_ElemCategoryValue>	categoryValues;		// nabidka voleb
 	Int32							categoryIndex	= -1;	// spolecna hodnota (-1 = ruzne)
+
+	bool							isElementId		= false;	// ID prvku (meni se pres ElementInfoString)
 };
 
 struct GroupRow {
 	API_Guid			guid	= APINULLGuid;
 	GS::UniString		name;
 	bool				builtIn	= false;
+	bool				noHeader	= false;	// skupina bez zahlavi (ID prvku navrchu)
 	GS::Array<PropRow>	props;
 };
 
@@ -67,6 +70,7 @@ bool				VariantEquals (const API_Variant& a, const API_Variant& b);
 ApplyResult			ApplyText		(const GS::Array<API_Guid>& elems, const API_PropertyDefinition& definition, const GS::UniString& text);
 ApplyResult			ApplyBool		(const GS::Array<API_Guid>& elems, const API_Guid& definitionGuid, bool value);
 ApplyResult			ApplyEnumKey	(const GS::Array<API_Guid>& elems, const API_Guid& definitionGuid, const API_Variant& keyVariant);
+ApplyResult			ApplyElementId	(const GS::Array<API_Guid>& elems, const GS::UniString& text);
 ApplyResult			ApplyCategory	(const GS::Array<API_Guid>& elems, const API_ElemCategory& category, const API_ElemCategoryValue& value);
 ApplyResult			ResetToDefault	(const GS::Array<API_Guid>& elems, const API_Guid& definitionGuid);
 
@@ -74,6 +78,7 @@ GS::UniString		GetUIString (Int32 index);
 
 // Guid skupiny "Kategorie a rekonstrukce" (neni ve Spravci vlastnosti)
 extern const API_Guid CategoryGroupGuid;
+extern const API_Guid ElementIdGroupGuid;
 
 }
 

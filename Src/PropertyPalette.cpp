@@ -344,6 +344,20 @@ void PropertyPalette::RebuildList ()
 	propList.DeleteItem (DG::ListBox::AllItems);
 	entries.Clear ();
 
+	// Vlastnosti jen pro cteni se nezobrazuji. Vyjimka: kdyz nejde upravit nic
+	// (napr. prvek z hotlinku nebo nerezervovany v Teamworku), zobrazi se vse.
+	bool anyEditable = false;
+	for (const PropData::GroupRow& group : groups) {
+		for (const PropData::PropRow& row : group.props) {
+			if (PropData::GetEditKind (row) != PropData::EditKind::ReadOnly) {
+				anyEditable = true;
+				break;
+			}
+		}
+		if (anyEditable)
+			break;
+	}
+
 	for (UInt32 groupIndex = 0; groupIndex < groups.GetSize (); ++groupIndex) {
 		const PropData::GroupRow& group = groups[groupIndex];
 		const bool groupMatches = filterActive && ToLower (group.name).Contains (filter);
@@ -351,6 +365,8 @@ void PropertyPalette::RebuildList ()
 		GS::Array<UInt32> visibleProps;
 		for (UInt32 propIndex = 0; propIndex < group.props.GetSize (); ++propIndex) {
 			const PropData::PropRow& row = group.props[propIndex];
+			if (anyEditable && PropData::GetEditKind (row) == PropData::EditKind::ReadOnly)
+				continue;
 			if (!filterActive || groupMatches ||
 				ToLower (row.definition.name).Contains (filter) ||
 				ToLower (row.valueText).Contains (filter))
@@ -364,16 +380,19 @@ void PropertyPalette::RebuildList ()
 		if (propList.GetItemCount () >= MaxListItems)
 			break;
 
-		const bool collapsed = !filterActive && collapsedGroups.Contains (APIGuid2GSGuid (group.guid));
+		const bool collapsed = !group.noHeader && !filterActive && collapsedGroups.Contains (APIGuid2GSGuid (group.guid));
 
-		propList.AppendItem ();
-		short listItem = propList.GetItemCount ();
-		propList.SetTabItemText (listItem, NameColumn, GetUIString (collapsed ? Str_Collapsed : Str_Expanded) + group.name);
-		propList.SetTabItemText (listItem, ValueColumn, GS::UniString ("(") + NumberToString (visibleProps.GetSize ()) + ")");
-		propList.SetItemFontStyle (listItem, DG::Font::Bold);
-		ListEntry groupEntry;
-		groupEntry.groupIndex = groupIndex;
-		entries.Push (groupEntry);
+		short listItem = 0;
+		if (!group.noHeader) {
+			propList.AppendItem ();
+			listItem = propList.GetItemCount ();
+			propList.SetTabItemText (listItem, NameColumn, GetUIString (collapsed ? Str_Collapsed : Str_Expanded) + group.name);
+			propList.SetTabItemText (listItem, ValueColumn, GS::UniString ("(") + NumberToString (visibleProps.GetSize ()) + ")");
+			propList.SetItemFontStyle (listItem, DG::Font::Bold);
+			ListEntry groupEntry;
+			groupEntry.groupIndex = groupIndex;
+			entries.Push (groupEntry);
+		}
 
 		if (collapsed)
 			continue;
@@ -385,7 +404,7 @@ void PropertyPalette::RebuildList ()
 			const PropData::PropRow& row = group.props[propIndex];
 			propList.AppendItem ();
 			listItem = propList.GetItemCount ();
-			propList.SetTabItemText (listItem, NameColumn, indent + row.definition.name);
+			propList.SetTabItemText (listItem, NameColumn, group.noHeader ? row.definition.name : indent + row.definition.name);
 			if (row.mixed) {
 				propList.SetTabItemText (listItem, ValueColumn, GetUIString (Str_Mixed));
 				propList.SetTabItemFontStyle (listItem, ValueColumn, DG::Font::Italic);
@@ -587,6 +606,7 @@ void PropertyPalette::Apply ()
 	const PropData::EditKind		kind		= PropData::GetEditKind (*row);
 	const API_PropertyDefinition	definition	= row->definition;
 	const API_ElemCategory			category		= row->category;
+	const bool						isElementId		= row->isElementId;
 	const GS::Array<API_ElemCategoryValue>	categoryValues	= row->categoryValues;
 	const GS::Array<API_Guid>		elems		= selection;
 
@@ -621,7 +641,10 @@ void PropertyPalette::Apply ()
 		switch (kind) {
 			case PropData::EditKind::Text:
 			case PropData::EditKind::Number:
-				result = PropData::ApplyText (elems, definition, text);
+				if (isElementId)
+					result = PropData::ApplyElementId (elems, text);
+				else
+					result = PropData::ApplyText (elems, definition, text);
 				break;
 			case PropData::EditKind::Category:
 			{

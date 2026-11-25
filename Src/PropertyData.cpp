@@ -13,7 +13,9 @@
 
 namespace PropData {
 
-const API_Guid CategoryGroupGuid = APIGuidFromString ("7C1E4B52-3D0A-4F6E-9B21-5A8C0D2E6F14");
+const API_Guid CategoryGroupGuid	= APIGuidFromString ("7C1E4B52-3D0A-4F6E-9B21-5A8C0D2E6F14");
+const API_Guid ElementIdGroupGuid	= APIGuidFromString ("3B6F2A91-8C4D-4E07-A5D2-1F9E7C3B5A60");
+const API_Guid ElementIdRowGuid		= APIGuidFromString ("D4E8A2C7-6B19-4F53-8E0A-92C5B7F1D3A8");
 
 // -----------------------------------------------------------------------------
 // Prevod textu na hodnotu vlastnosti v jednotkach z Predvolby projektu > Jednotky vypoctu
@@ -131,6 +133,47 @@ static bool IsVisibleForElement (const API_Guid& elemGuid, const API_PropertyDef
 }
 
 
+// Skupiny vlastnosti, ktere paleta nezobrazuje (porovnani bez ohledu na velikost pismen).
+// Dalsi skupinu skryjete pridanim jejiho nazvu do seznamu.
+static bool IsHiddenGroup (const GS::UniString& groupName)
+{
+	static const char* const hiddenNames[] = {
+		"IFC",
+		"Revize",
+		"Revision",
+		"Model pro anal\xC3\xBDzu konstrukce",		// Model pro analyzu konstrukce
+		"Structural Analytical Model",
+		"Varianty n\xC3\xA1vrhu",					// Varianty navrhu
+		"Design Options",
+		"Obecn\xC3\xA9 informace o povrchov\xC3\xA9m materi\xC3\xA1lu (mapov\xC3\xA1n\xC3\xAD)",	// Obecne informace o povrchovem materialu (mapovani)
+		"Um\xC3\xADst\xC4\x9Bn\xC3\xAD",					// Umisteni
+		"P\xC5\xAF" "dorys a \xC5\x99" "ez",				// Pudorys a rez
+		"Floor Plan and Section",
+		"Geometrie",
+		"Geometry",
+		"Okno/Dve\xC5\x99" "e",		// Okno/Dvere - jen presne tento nazev, skupina "Okna/dvere" zustava
+		"Obecn\xC3\xA9 parametry",	// Obecne parametry
+		"General Parameters",
+		"Z\xC3\xB3na"				// Zona - jen presne tento nazev, skupina "Zony" zustava
+	};
+
+	GS::UniString lowerName = groupName;
+	lowerName.SetToLowerCase ();
+	lowerName.Trim ();
+
+	for (const char* hiddenName : hiddenNames) {
+		GS::UniString lowerHidden (hiddenName, CC_UTF8);
+		lowerHidden.SetToLowerCase ();
+		if (lowerName == lowerHidden)
+			return true;
+	}
+
+	// Interni skupiny Archicadu bez ceskeho nazvu (napr. "ProjectInfoPropertyDefinitionGroup",
+	// "DesignOption Dynamic Properties")
+	return lowerName.EndsWith ("propertydefinitiongroup") || lowerName.EndsWith ("dynamic properties");
+}
+
+
 GS::Array<GroupRow> Collect (const GS::Array<API_Guid>& elems, bool includeBuiltIn)
 {
 	GS::Array<GroupRow> groups;
@@ -139,7 +182,47 @@ GS::Array<GroupRow> Collect (const GS::Array<API_Guid>& elems, bool includeBuilt
 
 	const UInt32 elemCount = std::min<UInt32> (elems.GetSize (), MaxElemsToEvaluate);
 
-	// 0) Kategorie prvku - skupina "Kategorie a rekonstrukce" navrchu
+	// 0a) ID prvku - samostatne uplne nahore
+	{
+		GroupRow idGroup;
+		idGroup.guid		= ElementIdGroupGuid;
+		idGroup.builtIn		= true;
+		idGroup.noHeader	= true;
+
+		PropRow row;
+		row.isElementId						= true;
+		row.definition.guid					= ElementIdRowGuid;
+		row.definition.groupGuid			= ElementIdGroupGuid;
+		row.definition.name					= GetUIString (23);
+		row.definition.definitionType		= API_PropertyStaticBuiltInDefinitionType;
+		row.definition.collectionType		= API_PropertySingleCollectionType;
+		row.definition.valueType			= API_PropertyStringValueType;
+		row.editable						= true;
+
+		bool available = true;
+		for (UInt32 i = 0; i < elemCount; ++i) {
+			GS::UniString elemId;
+			if (ACAPI_Element_GetElementInfoString (&elems[i], &elemId) != NoError) {
+				available = false;
+				break;
+			}
+			if (i == 0)
+				row.valueText = elemId;
+			else if (elemId != row.valueText)
+				row.mixed = true;
+			if (!ACAPI_Element_Filter (elems[i], APIFilt_IsEditable))
+				row.editable = false;
+		}
+		if (row.mixed)
+			row.valueText.Clear ();
+
+		if (available) {
+			idGroup.props.Push (row);
+			groups.Push (idGroup);
+		}
+	}
+
+	// 0b) Kategorie prvku - skupina "Kategorie a rekonstrukce"
 	{
 		GroupRow categoryGroup;
 		categoryGroup.guid		= CategoryGroupGuid;
@@ -347,7 +430,13 @@ GS::Array<GroupRow> Collect (const GS::Array<API_Guid>& elems, bool includeBuilt
 		groups[groupIndexByGuid.Get (key)].props.Push (row);
 	}
 
-	return groups;
+	// 4) Vyrazeni skupin, ktere se v palete nezobrazuji
+	GS::Array<GroupRow> shownGroups;
+	for (const GroupRow& group : groups) {
+		if (!IsHiddenGroup (group.name))
+			shownGroups.Push (group);
+	}
+	return shownGroups;
 }
 
 
@@ -484,6 +573,23 @@ ApplyResult ApplyEnumKey (const GS::Array<API_Guid>& elems, const API_Guid& defi
 		MarkAsCustomValue (property);
 		return true;
 	});
+}
+
+
+ApplyResult ApplyElementId (const GS::Array<API_Guid>& elems, const GS::UniString& text)
+{
+	ApplyResult result;
+	for (const API_Guid& elemGuid : elems) {
+		if (!ACAPI_Element_Filter (elemGuid, APIFilt_IsEditable)) {
+			++result.failed;
+			continue;
+		}
+		if (ACAPI_Element_ChangeElementInfoString (&elemGuid, &text) == NoError)
+			++result.succeeded;
+		else
+			++result.failed;
+	}
+	return result;
 }
 
 
