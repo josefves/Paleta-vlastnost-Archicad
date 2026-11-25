@@ -13,6 +13,8 @@
 
 namespace PropData {
 
+const API_Guid CategoryGroupGuid = APIGuidFromString ("7C1E4B52-3D0A-4F6E-9B21-5A8C0D2E6F14");
+
 // -----------------------------------------------------------------------------
 // Prevod textu na hodnotu vlastnosti v jednotkach z Predvolby projektu > Jednotky vypoctu
 // -----------------------------------------------------------------------------
@@ -72,15 +74,6 @@ GS::UniString GetUIString (Int32 index)
 	GS::UniString result;
 	RSGetIndString (&result, ID_UI_STRINGS, index, ACAPI_GetOwnResModule ());
 	return result;
-}
-
-
-GS::UniString GetRenovationName (API_RenovationStatusType status)
-{
-	GS::UniString name;
-	if (status == API_ExistingStatus || status == API_NewStatus || status == API_DemolishedStatus)
-		ACAPI_Renovation_GetRenovationStatusName (status, &name);
-	return name;
 }
 
 
@@ -145,6 +138,81 @@ GS::Array<GroupRow> Collect (const GS::Array<API_Guid>& elems, bool includeBuilt
 		return groups;
 
 	const UInt32 elemCount = std::min<UInt32> (elems.GetSize (), MaxElemsToEvaluate);
+
+	// 0) Kategorie prvku - skupina "Kategorie a rekonstrukce" navrchu
+	{
+		GroupRow categoryGroup;
+		categoryGroup.guid		= CategoryGroupGuid;
+		categoryGroup.name		= GetUIString (22);
+		categoryGroup.builtIn	= true;
+
+		GS::Array<API_ElemCategory> categories;
+		ACAPI_Category_GetElementCategories (&categories);
+
+		const API_ElemCategoryID wantedIds[] = {
+			API_ElemCategory_StructuralFunction,
+			API_ElemCategory_Position,
+			API_ElemCategory_RenovationStatus,
+			API_ElemCategory_RenovationFilter
+		};
+
+		for (API_ElemCategoryID wantedId : wantedIds) {
+			for (const API_ElemCategory& category : categories) {
+				if (category.categoryID != wantedId)
+					continue;
+
+				PropRow row;
+				row.categoryID			= category.categoryID;
+				row.category			= category;
+				row.definition.guid		= category.guid;
+				row.definition.groupGuid	= CategoryGroupGuid;
+				row.definition.name		= GS::UniString (category.name);
+				row.definition.definitionType	= API_PropertyStaticBuiltInDefinitionType;
+				row.editable			= true;
+
+				GS::Array<API_ElemCategoryValue> allValues;
+				ACAPI_Category_GetElementCategoryValues (&category, &allValues);
+				for (const API_ElemCategoryValue& value : allValues) {
+					if (value.isVisibleOnUI)
+						row.categoryValues.Push (value);
+				}
+
+				bool available = !row.categoryValues.IsEmpty ();
+				API_Guid commonValueGuid = APINULLGuid;
+				for (UInt32 i = 0; i < elemCount && available; ++i) {
+					API_ElemCategoryValue value {};
+					if (ACAPI_Category_GetCategoryValue (elems[i], category, &value) != NoError) {
+						available = false;
+						break;
+					}
+					if (i == 0) {
+						commonValueGuid	= value.guid;
+						row.valueText	= GS::UniString (value.name);
+					} else if (value.guid != commonValueGuid) {
+						row.mixed = true;
+					}
+					if (!ACAPI_Element_Filter (elems[i], APIFilt_IsEditable))
+						row.editable = false;
+				}
+				if (!available)
+					break;
+
+				if (row.mixed) {
+					row.valueText.Clear ();
+				} else {
+					for (UInt32 v = 0; v < row.categoryValues.GetSize (); ++v) {
+						if (row.categoryValues[v].guid == commonValueGuid)
+							row.categoryIndex = static_cast<Int32> (v);
+					}
+				}
+				categoryGroup.props.Push (row);
+				break;
+			}
+		}
+
+		if (!categoryGroup.props.IsEmpty ())
+			groups.Push (categoryGroup);
+	}
 	const API_PropertyDefinitionFilter filter = includeBuiltIn ? API_PropertyDefinitionFilter_All : API_PropertyDefinitionFilter_UserDefined;
 
 	// 1) Definice vlastnosti spolecne vsem nactenym prvkum
@@ -201,32 +269,6 @@ GS::Array<GroupRow> Collect (const GS::Array<API_Guid>& elems, bool includeBuilt
 	for (UInt32 k = 0; k < rows.GetSize (); ++k)
 		rowIndexByGuid.Add (APIGuid2GSGuid (rows[k].definition.guid), k);
 
-	// Stav pri rekonstrukci jednotlivych prvku - slouzi k rozpoznani vestavene vlastnosti
-	// "Stav pri rekonstrukci", kterou API vraci jen jako text.
-	GS::Array<API_RenovationStatusType>	renovationStatuses;
-	GS::Array<GS::UniString>			renovationNames;
-	bool								renovationAvailable = true;
-	for (UInt32 i = 0; i < elemCount; ++i) {
-		API_Elem_Head elemHead {};
-		elemHead.guid = elems[i];
-		API_RenovationStatusType status = API_UndefinedStatus;
-		if (ACAPI_Element_GetHeader (&elemHead) == NoError)
-			status = elemHead.renovationStatus;
-		if (status != API_ExistingStatus && status != API_NewStatus && status != API_DemolishedStatus)
-			renovationAvailable = false;
-		renovationStatuses.Push (status);
-		renovationNames.Push (GetRenovationName (status));
-	}
-
-	GS::Array<bool> matchesRenovation;
-	for (UInt32 k = 0; k < rows.GetSize (); ++k) {
-		const API_PropertyDefinition& definition = rows[k].definition;
-		matchesRenovation.Push (renovationAvailable &&
-								definition.definitionType != API_PropertyCustomDefinitionType &&
-								definition.collectionType == API_PropertySingleCollectionType &&
-								definition.valueType == API_PropertyStringValueType);
-	}
-
 	for (UInt32 i = 0; i < elemCount; ++i) {
 		GS::Array<API_Property> properties;
 		if (ACAPI_Element_GetPropertyValues (elems[i], definitions, properties) != NoError)
@@ -240,8 +282,6 @@ GS::Array<GroupRow> Collect (const GS::Array<API_Guid>& elems, bool includeBuilt
 			const UInt32 rowIndex = rowIndexByGuid.Get (key);
 			PropRow& row = rows[rowIndex];
 			const GS::UniString valueText = PropertyToDisplayString (property);
-			if (matchesRenovation[rowIndex] && (renovationNames[i].IsEmpty () || valueText != renovationNames[i]))
-				matchesRenovation[rowIndex] = false;
 			if (i == 0) {
 				row.valueText	= valueText;
 				row.hasValue	= property.status == API_Property_HasValue;
@@ -252,6 +292,10 @@ GS::Array<GroupRow> Collect (const GS::Array<API_Guid>& elems, bool includeBuilt
 
 			if (row.editable && !ACAPI_Element_IsPropertyDefinitionValueEditable (elems[i], property.definition.guid))
 				row.editable = false;
+
+			// hodnota pocitana vyrazem (v Archicadu "<Vyraz>") - neprepisovat
+			if (property.isDefault && property.definition.defaultValue.hasExpression)
+				row.editable = false;
 		}
 	}
 
@@ -260,28 +304,6 @@ GS::Array<GroupRow> Collect (const GS::Array<API_Guid>& elems, bool includeBuilt
 			row.valueText.Clear ();
 	}
 
-	// Prvni vestavena textova vlastnost, jejiz hodnota u vsech prvku odpovida stavu pri rekonstrukci
-	for (UInt32 k = 0; k < rows.GetSize (); ++k) {
-		if (!matchesRenovation[k])
-			continue;
-
-		PropRow& row = rows[k];
-		row.isRenovation		= true;
-		row.renovationStatus	= renovationStatuses[0];
-		for (UInt32 i = 1; i < renovationStatuses.GetSize (); ++i) {
-			if (renovationStatuses[i] != row.renovationStatus)
-				row.renovationStatus = API_UndefinedStatus;
-		}
-
-		row.editable = true;
-		for (UInt32 i = 0; i < elemCount; ++i) {
-			if (!ACAPI_Element_Filter (elems[i], APIFilt_IsEditable)) {
-				row.editable = false;
-				break;
-			}
-		}
-		break;
-	}
 
 	// 3) Seskupeni podle skupin ve Spravci vlastnosti (vlastni skupiny prvni, pak vestavene)
 	GS::Array<API_PropertyGroup> allGroups;
@@ -334,8 +356,8 @@ EditKind GetEditKind (const PropRow& row)
 	if (!row.editable)
 		return EditKind::ReadOnly;
 
-	if (row.isRenovation)
-		return EditKind::Renovation;
+	if (row.categoryID != API_ElemCategory_Undefined)
+		return EditKind::Category;
 
 	switch (row.definition.collectionType) {
 		case API_PropertyListCollectionType:
@@ -465,32 +487,15 @@ ApplyResult ApplyEnumKey (const GS::Array<API_Guid>& elems, const API_Guid& defi
 }
 
 
-ApplyResult ApplyRenovation (const GS::Array<API_Guid>& elems, API_RenovationStatusType status)
+ApplyResult ApplyCategory (const GS::Array<API_Guid>& elems, const API_ElemCategory& category, const API_ElemCategoryValue& value)
 {
 	ApplyResult result;
-
-	API_Element mask;
-	ACAPI_ELEMENT_MASK_CLEAR (mask);
-	ACAPI_ELEMENT_MASK_SET (mask, API_Elem_Head, renovationStatus);
-
 	for (const API_Guid& elemGuid : elems) {
-		API_Element element {};
-		element.header.guid = elemGuid;
-		if (ACAPI_Element_Get (&element) != NoError ||
-			element.header.renovationStatus == API_UndefinedStatus ||
-			!ACAPI_Element_Filter (elemGuid, APIFilt_IsEditable))
-		{
+		if (!ACAPI_Element_Filter (elemGuid, APIFilt_IsEditable)) {
 			++result.failed;
 			continue;
 		}
-
-		if (element.header.renovationStatus == status) {
-			++result.succeeded;
-			continue;
-		}
-
-		element.header.renovationStatus = status;
-		if (ACAPI_Element_Change (&element, &mask, nullptr, 0, true) == NoError)
+		if (ACAPI_Category_SetCategoryValue (elemGuid, category, value) == NoError)
 			++result.succeeded;
 		else
 			++result.failed;

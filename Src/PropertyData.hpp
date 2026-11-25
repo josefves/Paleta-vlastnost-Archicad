@@ -25,9 +25,12 @@ struct PropRow {
 	bool					hasValue	= false;	// prvni prvek ma vyhodnocenou hodnotu
 	API_PropertyValue		firstValue;				// hodnota u prvniho prvku
 
-	// Vestavena vlastnost "Stav pri rekonstrukci" - meni se primo v hlavicce prvku
-	bool						isRenovation		= false;
-	API_RenovationStatusType	renovationStatus	= API_UndefinedStatus;	// spolecny stav (Undefined = ruzne)
+	// Kategorie prvku (Funkce konstrukce, Umisteni, Stav pri rekonstrukci, Zobrazeni s filtrem rekonstrukce)
+	// - nejsou to vlastnosti, meni se pres API kategorii. Undefined = bezna vlastnost.
+	API_ElemCategoryID				categoryID		= API_ElemCategory_Undefined;
+	API_ElemCategory				category		{};
+	GS::Array<API_ElemCategoryValue>	categoryValues;		// nabidka voleb
+	Int32							categoryIndex	= -1;	// spolecna hodnota (-1 = ruzne)
 };
 
 struct GroupRow {
@@ -45,7 +48,7 @@ enum class EditKind {
 	Number,
 	Bool,
 	Enum,
-	Renovation
+	Category
 };
 
 struct ApplyResult {
@@ -64,11 +67,13 @@ bool				VariantEquals (const API_Variant& a, const API_Variant& b);
 ApplyResult			ApplyText		(const GS::Array<API_Guid>& elems, const API_PropertyDefinition& definition, const GS::UniString& text);
 ApplyResult			ApplyBool		(const GS::Array<API_Guid>& elems, const API_Guid& definitionGuid, bool value);
 ApplyResult			ApplyEnumKey	(const GS::Array<API_Guid>& elems, const API_Guid& definitionGuid, const API_Variant& keyVariant);
-ApplyResult			ApplyRenovation	(const GS::Array<API_Guid>& elems, API_RenovationStatusType status);
+ApplyResult			ApplyCategory	(const GS::Array<API_Guid>& elems, const API_ElemCategory& category, const API_ElemCategoryValue& value);
 ApplyResult			ResetToDefault	(const GS::Array<API_Guid>& elems, const API_Guid& definitionGuid);
 
 GS::UniString		GetUIString (Int32 index);
-GS::UniString		GetRenovationName (API_RenovationStatusType status);
+
+// Guid skupiny "Kategorie a rekonstrukce" (neni ve Spravci vlastnosti)
+extern const API_Guid CategoryGroupGuid;
 
 }
 

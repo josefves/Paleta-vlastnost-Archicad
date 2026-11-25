@@ -57,7 +57,8 @@ private:
 
 	enum Columns {
 		NameColumn	= 1,
-		ValueColumn	= 2
+		ValueColumn	= 2,
+		ArrowColumn	= 3		// sipka u vlastnosti s nabidkou voleb
 	};
 
 	struct ListEntry {
@@ -101,7 +102,9 @@ private:
 	void	RebuildList ();
 	void	UpdateEditor ();
 	void	UpdateEditorContent ();
-	void	OpenValueEditorAtCursor ();
+	void	OpenValueEditor (short listItem);
+	DG::NativePoint	GetCellDropDownPoint (short listItem) const;
+	static bool		HasOptionMenu (const PropData::PropRow& row);
 	void	UpdateColumns ();
 	void	UpdateInfoText ();
 	void	UpdateObservers ();
